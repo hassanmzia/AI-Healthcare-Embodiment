@@ -36,10 +36,12 @@ app.get('/health', (req, res) => {
 });
 
 // Proxy to Django backend API
+// Express strips the '/api' mount prefix before passing to the proxy,
+// so we prepend '/api' back via pathRewrite to match Django URL config.
 app.use('/api', createProxyMiddleware({
   target: BACKEND_URL,
   changeOrigin: true,
-  pathRewrite: { '^/api': '/api' },
+  pathRewrite: (path) => `/api${path}`,
   onProxyReq: (proxyReq, req) => {
     proxyReq.setHeader('X-Forwarded-For', req.ip);
   },

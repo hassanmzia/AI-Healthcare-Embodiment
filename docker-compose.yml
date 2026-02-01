@@ -46,6 +46,7 @@ services:
     container_name: ms_risk_backend
     command: >
       bash -c "
+        python manage.py makemigrations core patients agents governance analytics --noinput &&
         python manage.py migrate --noinput &&
         python manage.py collectstatic --noinput &&
         python manage.py seed_data --patients 2500 || true &&
@@ -87,7 +88,16 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: ms_risk_celery_worker
-    command: celery -A config worker -l info -c 4 -Q default,agents,analytics
+    command: >
+      bash -c "
+        echo 'Waiting for backend migrations...' &&
+        until python manage.py showmigrations --plan 2>/dev/null | grep -q '\[X\]'; do
+          echo 'Backend not ready, waiting 5s...';
+          sleep 5;
+        done &&
+        echo 'Backend ready, starting Celery worker...' &&
+        celery -A config worker -l info -c 4 -Q default,agents,analytics
+      "
     environment:
       - DEBUG=0
       - DATABASE_URL=postgresql://msrisk_admin:${POSTGRES_PASSWORD:-MSRisk2024Secure!}@postgres:5432/ms_risk_lab
@@ -99,7 +109,7 @@ services:
     volumes:
       - ./backend:/app
     depends_on:
-      postgres:
+      backend:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -112,7 +122,16 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: ms_risk_celery_beat
-    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    command: >
+      bash -c "
+        echo 'Waiting for backend migrations...' &&
+        until python manage.py showmigrations --plan 2>/dev/null | grep -q '\[X\]'; do
+          echo 'Backend not ready, waiting 5s...';
+          sleep 5;
+        done &&
+        echo 'Backend ready, starting Celery beat...' &&
+        celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+      "
     environment:
       - DEBUG=0
       - DATABASE_URL=postgresql://msrisk_admin:${POSTGRES_PASSWORD:-MSRisk2024Secure!}@postgres:5432/ms_risk_lab
@@ -122,7 +141,7 @@ services:
     volumes:
       - ./backend:/app
     depends_on:
-      postgres:
+      backend:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -146,7 +165,7 @@ services:
     ports:
       - "9055:9000"
     depends_on:
-      postgres:
+      backend:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -171,8 +190,10 @@ services:
     ports:
       - "9155:9100"
     depends_on:
-      - mcp_server
-      - backend
+      backend:
+        condition: service_healthy
+      mcp_server:
+        condition: service_started
     networks:
       - ms_risk_network
 
