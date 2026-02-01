@@ -51,6 +51,24 @@ BASE_COLS = [
     'ms_diagnosis',
 ]
 
+# Map from agent-expected column names to Patient model field names
+_MODEL_FIELD_MAP = {
+    'visit_count': 'visits_last_year',
+    'note_text': 'note',
+    'lookalike_condition': 'lookalike_dx',
+    'ms_diagnosis': 'true_at_risk',
+    'smartform_neuro': 'smartform_neuro_symptom_score',
+    'paths_like_function': 'paths_like_function_score',
+}
+
+# Map coordinator autonomy_level int to RiskAssessment CharField values
+_AUTONOMY_INT_TO_STR = {
+    0: 'RECOMMEND_ONLY',
+    1: 'RECOMMEND_ONLY',
+    2: 'DRAFT_ORDER',
+    3: 'AUTO_ORDER_WITH_GUARDRAILS',
+}
+
 
 def _patients_to_dataframe(patients_qs, limit: Optional[int] = None) -> pd.DataFrame:
     """Convert a Patient queryset into a pandas DataFrame."""
@@ -62,7 +80,8 @@ def _patients_to_dataframe(patients_qs, limit: Optional[int] = None) -> pd.DataF
     for p in qs:
         row = {}
         for col in cols:
-            row[col] = getattr(p, col, None)
+            model_field = _MODEL_FIELD_MAP.get(col, col)
+            row[col] = getattr(p, model_field, None)
         records.append(row)
     return pd.DataFrame(records)
 
@@ -77,6 +96,23 @@ def _patient_row_to_dict(row: pd.Series) -> Dict[str, Any]:
         elif hasattr(v, 'item'):
             d[k] = v.item()
     return d
+
+
+def _get_or_create_default_policy():
+    """Get the active PolicyConfiguration or create a default one."""
+    from patients.models import PolicyConfiguration
+    policy_obj = PolicyConfiguration.objects.filter(is_active=True).first()
+    if not policy_obj:
+        policy_obj = PolicyConfiguration.objects.create(
+            name='Default Policy',
+            risk_review_threshold=settings.MS_RISK_POLICY.get('risk_review_threshold', 0.65),
+            draft_order_threshold=settings.MS_RISK_POLICY.get('draft_order_threshold', 0.80),
+            auto_order_threshold=settings.MS_RISK_POLICY.get('auto_order_threshold', 0.90),
+            max_auto_actions_per_day=settings.MS_RISK_POLICY.get('max_auto_actions_per_day', 20),
+            is_active=True,
+            created_by='system',
+        )
+    return policy_obj
 
 
 def build_patient_card(
@@ -145,8 +181,8 @@ def run_screening_workflow(
     Parameters
     ----------
     policy_config_id : str or None
-        UUID string for a governance.PolicyConfig record. If None,
-        system defaults from settings.MS_RISK_POLICY are used.
+        UUID string for a PolicyConfiguration record. If None,
+        the active policy or system defaults are used.
     patient_limit : int or None
         Maximum number of patients to load (useful for dev/testing).
 
@@ -155,30 +191,33 @@ def run_screening_workflow(
     str
         The UUID (as string) of the created WorkflowRun.
     """
-    from patients.models import Patient, WorkflowRun, RiskAssessment
+    from patients.models import Patient, WorkflowRun, RiskAssessment, PolicyConfiguration
     from .models import AgentExecution
 
     workflow_start = time.time()
 
     # ---- Load policy ----
-    policy = dict(settings.MS_RISK_POLICY)
+    policy_obj = None
     if policy_config_id:
         try:
-            from governance.models import PolicyConfig
-            pc = PolicyConfig.objects.get(pk=policy_config_id)
-            policy.update({
-                'risk_review_threshold': pc.risk_review_threshold,
-                'draft_order_threshold': pc.draft_order_threshold,
-                'auto_order_threshold': pc.auto_order_threshold,
-                'max_auto_actions_per_day': pc.max_auto_actions_per_day,
-            })
-        except Exception as e:
-            logger.warning(f"Could not load PolicyConfig {policy_config_id}: {e}")
+            policy_obj = PolicyConfiguration.objects.get(pk=policy_config_id)
+        except PolicyConfiguration.DoesNotExist:
+            logger.warning(f"PolicyConfiguration {policy_config_id} not found, using default.")
+
+    if not policy_obj:
+        policy_obj = _get_or_create_default_policy()
+
+    policy = {
+        'risk_review_threshold': policy_obj.risk_review_threshold,
+        'draft_order_threshold': policy_obj.draft_order_threshold,
+        'auto_order_threshold': policy_obj.auto_order_threshold,
+        'max_auto_actions_per_day': policy_obj.max_auto_actions_per_day,
+    }
 
     # ---- Create WorkflowRun ----
     wf_run = WorkflowRun.objects.create(
-        status='running',
-        policy_snapshot=policy,
+        policy=policy_obj,
+        status='RUNNING',
     )
     logger.info(f"WorkflowRun {wf_run.id} started.")
 
@@ -186,10 +225,13 @@ def run_screening_workflow(
         # ---- Step 2: Load patients ----
         patients_df = _patients_to_dataframe(Patient.objects, limit=patient_limit)
         if patients_df.empty:
-            wf_run.status = 'completed'
-            wf_run.results = {'error': 'No patients found', 'patient_cards': []}
+            wf_run.status = 'COMPLETED'
+            wf_run.error_message = 'No patients found'
             wf_run.save()
             return str(wf_run.id)
+
+        wf_run.total_patients = len(patients_df)
+        wf_run.save(update_fields=['total_patients'])
 
         # ---- Step 3: Retrieval ----
         retrieval = RetrievalAgent()
@@ -204,14 +246,12 @@ def run_screening_workflow(
         )
 
         candidate_ids = retrieval_out.payload.get('candidate_ids', [])
+        wf_run.candidates_found = len(candidate_ids)
+        wf_run.save(update_fields=['candidates_found'])
+
         if not candidate_ids:
-            wf_run.status = 'completed'
-            wf_run.results = {
-                'patient_cards': [],
-                'retrieval': retrieval_out.payload,
-                'metrics': {},
-            }
-            wf_run.save()
+            wf_run.status = 'COMPLETED'
+            wf_run.save(update_fields=['status'])
             return str(wf_run.id)
 
         # ---- Step 4: Per-candidate agent chain ----
@@ -223,6 +263,11 @@ def run_screening_workflow(
 
         patient_cards: List[Dict[str, Any]] = []
         candidates_df = patients_df[patients_df['patient_id'].isin(candidate_ids)]
+
+        auto_count = 0
+        draft_count = 0
+        recommend_count = 0
+        total_flags = 0
 
         for _, row in candidates_df.iterrows():
             patient_data = _patient_row_to_dict(row)
@@ -275,18 +320,36 @@ def run_screening_workflow(
             )
             patient_cards.append(card)
 
+            # -- Track action counts --
+            action = coord_out.payload.get('action', 'NO_ACTION')
+            if action == 'AUTO_ORDER_MRI_AND_NOTIFY_NEURO':
+                auto_count += 1
+            elif action == 'DRAFT_MRI_ORDER':
+                draft_count += 1
+            elif action == 'RECOMMEND_NEURO_REVIEW':
+                recommend_count += 1
+
+            flag_count = safety_out.payload.get('flag_count', 0)
+            total_flags += flag_count
+
             # -- Persist RiskAssessment --
             try:
                 patient_obj = Patient.objects.get(patient_id=pid)
+                autonomy_int = coord_out.payload.get('autonomy_level', 0)
+                autonomy_str = _AUTONOMY_INT_TO_STR.get(autonomy_int, 'RECOMMEND_ONLY')
+
                 RiskAssessment.objects.create(
                     patient=patient_obj,
-                    workflow_run=wf_run,
+                    run_id=wf_run.id,
                     risk_score=risk_score,
-                    action=coord_out.payload.get('action', 'NO_ACTION'),
-                    autonomy_level=coord_out.payload.get('autonomy_level', 0),
+                    action=action,
+                    autonomy_level=autonomy_str,
                     feature_contributions=pheno_out.payload.get('feature_contributions', {}),
-                    safety_flags=safety_out.payload.get('flags', []),
-                    card=card,
+                    flags=safety_out.payload.get('flags', []),
+                    flag_count=flag_count,
+                    rationale=coord_out.payload,
+                    notes_analysis=notes_out.payload,
+                    patient_card=card,
                 )
             except Exception as e:
                 logger.error(f"Failed to create RiskAssessment for {pid}: {e}")
@@ -295,28 +358,32 @@ def run_screening_workflow(
         metrics = _compute_metrics(patient_cards, policy)
 
         # ---- Step 7: Update WorkflowRun ----
-        workflow_duration = (time.time() - workflow_start) * 1000
-        wf_run.status = 'completed'
-        wf_run.results = {
-            'retrieval': retrieval_out.payload,
-            'patient_cards': patient_cards,
-            'metrics': metrics,
-            'total_duration_ms': round(workflow_duration, 1),
-            'candidates_count': len(candidate_ids),
-            'total_patients': len(patients_df),
-        }
+        workflow_duration = time.time() - workflow_start
+        flagged_count = auto_count + draft_count + recommend_count
+
+        wf_run.status = 'COMPLETED'
+        wf_run.flagged_count = flagged_count
+        wf_run.precision = metrics.get('precision')
+        wf_run.recall = metrics.get('recall')
+        wf_run.auto_actions = auto_count
+        wf_run.draft_actions = draft_count
+        wf_run.recommend_actions = recommend_count
+        wf_run.safety_flag_rate = (
+            total_flags / len(patient_cards) if patient_cards else None
+        )
+        wf_run.duration_seconds = round(workflow_duration, 2)
         wf_run.save()
 
         logger.info(
-            f"WorkflowRun {wf_run.id} completed in {workflow_duration:.1f}ms. "
+            f"WorkflowRun {wf_run.id} completed in {workflow_duration:.1f}s. "
             f"Cards: {len(patient_cards)}  Metrics: {metrics}"
         )
         return str(wf_run.id)
 
     except Exception as e:
         logger.exception(f"WorkflowRun {wf_run.id} failed: {e}")
-        wf_run.status = 'failed'
-        wf_run.results = {'error': str(e)}
+        wf_run.status = 'FAILED'
+        wf_run.error_message = str(e)
         wf_run.save()
         raise
 
