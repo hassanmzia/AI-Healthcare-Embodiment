@@ -160,6 +160,7 @@ class WorkflowRunViewSet(viewsets.ReadOnlyModelViewSet):
 
         requested_policy_id = serializer.validated_data.get('policy_id')
         policy_config_id = str(requested_policy_id) if requested_policy_id else None
+        patient_limit = serializer.validated_data.get('patient_limit')
 
         # Resolve the actual policy that will be used
         if requested_policy_id:
@@ -174,10 +175,17 @@ class WorkflowRunViewSet(viewsets.ReadOnlyModelViewSet):
                 resolved_policy_id = 'default (will be created)'
                 resolved_policy_name = 'Default Policy'
 
+        # Resolve total patient count for audit when no limit specified
+        if patient_limit is None:
+            from patients.models import Patient
+            total_patients = Patient.objects.count()
+        else:
+            total_patients = patient_limit
+
         from agents.tasks import run_screening_workflow_task
         task = run_screening_workflow_task.delay(
             policy_config_id=policy_config_id,
-            patient_limit=serializer.validated_data.get('patient_limit'),
+            patient_limit=patient_limit,
         )
 
         AuditLog.objects.create(
@@ -189,7 +197,7 @@ class WorkflowRunViewSet(viewsets.ReadOnlyModelViewSet):
                 'task_id': task.id,
                 'policy_id': resolved_policy_id,
                 'policy_name': resolved_policy_name,
-                'patient_limit': serializer.validated_data.get('patient_limit'),
+                'patient_limit': patient_limit if patient_limit else f'all ({total_patients})',
             }
         )
         return Response({'task_id': task.id, 'status': 'queued'}, status=status.HTTP_202_ACCEPTED)
