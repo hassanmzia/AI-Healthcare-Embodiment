@@ -167,9 +167,12 @@ class WorkflowRunViewSet(viewsets.ReadOnlyModelViewSet):
         AuditLog.objects.create(
             action_type='AGENT_RUN',
             actor='api',
+            target_type='WorkflowRun',
+            target_id=task.id,
             details={
                 'task_id': task.id,
                 'policy_id': str(serializer.validated_data.get('policy_id', '')),
+                'patient_limit': serializer.validated_data.get('patient_limit'),
             }
         )
         return Response({'task_id': task.id, 'status': 'queued'}, status=status.HTTP_202_ACCEPTED)
