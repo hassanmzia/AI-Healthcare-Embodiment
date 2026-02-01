@@ -456,6 +456,7 @@ def _create_workflow_notifications(
             ),
             severity='warning',
             category='auto_action',
+            related_patient_id=auto_patients[0] if len(auto_patients) == 1 else '',
             metadata={
                 'run_id': str(wf_run.id),
                 'patient_ids': auto_patients,
@@ -478,6 +479,7 @@ def _create_workflow_notifications(
             ),
             severity='critical',
             category='high_risk',
+            related_patient_id=hr_ids[0] if len(hr_ids) == 1 else '',
             metadata={
                 'run_id': str(wf_run.id),
                 'patient_ids': [c['patient_id'] for c in high_risk],

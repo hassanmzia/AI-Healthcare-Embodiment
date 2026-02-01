@@ -75,15 +75,28 @@ export default function NotificationsPage() {
                   <ListItemIcon>{severityIcon(n.severity)}</ListItemIcon>
                   <ListItemText
                     primary={
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                         <Typography variant="subtitle2" sx={{ fontWeight: n.is_read ? 400 : 700 }}>{n.title}</Typography>
                         <Chip label={n.category} size="small" variant="outlined" />
                         {!n.is_read && <Chip label="New" size="small" color="primary" />}
+                        {n.related_patient_id && (
+                          <Chip label={`Patient: ${n.related_patient_id}`} size="small" color="info" variant="outlined" />
+                        )}
                       </Box>
                     }
                     secondary={
                       <Box>
-                        <Typography variant="body2">{n.message}</Typography>
+                        <Typography variant="body2" sx={{ mb: 0.5 }}>{n.message}</Typography>
+                        {n.metadata?.patient_ids && (n.metadata.patient_ids as string[]).length > 0 && (
+                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 0.5 }}>
+                            {(n.metadata.patient_ids as string[]).slice(0, 8).map((pid: string) => (
+                              <Chip key={pid} label={pid} size="small" sx={{ fontFamily: 'monospace', fontSize: '0.7rem', height: 20 }} />
+                            ))}
+                            {(n.metadata.patient_ids as string[]).length > 8 && (
+                              <Chip label={`+${(n.metadata.patient_ids as string[]).length - 8} more`} size="small" sx={{ fontSize: '0.7rem', height: 20 }} />
+                            )}
+                          </Box>
+                        )}
                         <Typography variant="caption" color="text.secondary">{formatDate(n.created_at)}</Typography>
                       </Box>
                     }
