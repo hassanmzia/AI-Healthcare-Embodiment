@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Typography, Card, CardContent, Grid, Chip, CircularProgress,
   Table, TableBody, TableCell, TableHead, TableRow, Button,
+  Dialog, DialogTitle, DialogContent, DialogActions, Divider, IconButton,
 } from '@mui/material';
-import { Security as SecurityIcon } from '@mui/icons-material';
+import { Security as SecurityIcon, Close as CloseIcon } from '@mui/icons-material';
 import { getGovernanceRules, getComplianceReports, generateComplianceReport, getWorkflowRuns } from '../services/api';
 import { formatDate } from '../utils/helpers';
 
@@ -13,6 +14,7 @@ export default function GovernancePage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [latestRunId, setLatestRunId] = useState<string | null>(null);
+  const [selectedReport, setSelectedReport] = useState<any | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -108,7 +110,7 @@ export default function GovernancePage() {
                 </TableHead>
                 <TableBody>
                   {reports.map((report) => (
-                    <TableRow key={report.id}>
+                    <TableRow key={report.id} hover sx={{ cursor: 'pointer' }} onClick={() => setSelectedReport(report)}>
                       <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{report.id?.slice(0, 8)}...</TableCell>
                       <TableCell><Chip label={report.report_type} size="small" /></TableCell>
                       <TableCell>{report.summary}</TableCell>
@@ -125,6 +127,138 @@ export default function GovernancePage() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Compliance Report Detail Dialog */}
+      <Dialog open={!!selectedReport} onClose={() => setSelectedReport(null)} maxWidth="md" fullWidth>
+        {selectedReport && (
+          <>
+            <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box>
+                <Typography variant="h6">Compliance Report</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {selectedReport.report_type} &mdash; {formatDate(selectedReport.created_at)}
+                </Typography>
+              </Box>
+              <IconButton onClick={() => setSelectedReport(null)} size="small"><CloseIcon /></IconButton>
+            </DialogTitle>
+            <DialogContent dividers>
+              {/* Summary */}
+              <Typography variant="subtitle1" fontWeight={600} gutterBottom>Summary</Typography>
+              <Typography variant="body2" sx={{ mb: 2 }}>{selectedReport.summary}</Typography>
+              <Divider sx={{ my: 2 }} />
+
+              {/* Performance Metrics */}
+              {selectedReport.data?.metrics && (
+                <>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>Performance Metrics</Typography>
+                  <Grid container spacing={2} sx={{ mb: 2 }}>
+                    {[
+                      { label: 'Precision', value: selectedReport.data.metrics.precision },
+                      { label: 'Recall', value: selectedReport.data.metrics.recall },
+                      { label: 'F1 Score', value: selectedReport.data.metrics.f1_score },
+                      { label: 'Total Assessed', value: selectedReport.data.metrics.total_assessed },
+                      { label: 'Flagged', value: selectedReport.data.metrics.flagged_count },
+                      { label: 'Avg Risk Score', value: selectedReport.data.metrics.avg_risk_score },
+                    ].map((m) => (
+                      <Grid item xs={4} key={m.label}>
+                        <Card variant="outlined">
+                          <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
+                            <Typography variant="caption" color="text.secondary">{m.label}</Typography>
+                            <Typography variant="h6">{m.value ?? 'N/A'}</Typography>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    ))}
+                  </Grid>
+
+                  <Typography variant="subtitle2" gutterBottom>Confusion Matrix</Typography>
+                  <Grid container spacing={2} sx={{ mb: 2 }}>
+                    {[
+                      { label: 'True Positives', value: selectedReport.data.metrics.tp, color: '#2e7d32' },
+                      { label: 'False Positives', value: selectedReport.data.metrics.fp, color: '#d32f2f' },
+                      { label: 'True Negatives', value: selectedReport.data.metrics.tn, color: '#1565c0' },
+                      { label: 'False Negatives', value: selectedReport.data.metrics.fn, color: '#f57c00' },
+                    ].map((m) => (
+                      <Grid item xs={3} key={m.label}>
+                        <Card variant="outlined">
+                          <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
+                            <Typography variant="caption" color="text.secondary">{m.label}</Typography>
+                            <Typography variant="h6" sx={{ color: m.color }}>{m.value ?? 0}</Typography>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    ))}
+                  </Grid>
+
+                  <Typography variant="subtitle2" gutterBottom>Action Breakdown</Typography>
+                  <Grid container spacing={2} sx={{ mb: 2 }}>
+                    {[
+                      { label: 'Auto Actions', value: selectedReport.data.metrics.auto_actions },
+                      { label: 'Draft Actions', value: selectedReport.data.metrics.draft_actions },
+                      { label: 'Recommend Actions', value: selectedReport.data.metrics.recommend_actions },
+                      { label: 'No Actions', value: selectedReport.data.metrics.no_actions },
+                    ].map((m) => (
+                      <Grid item xs={3} key={m.label}>
+                        <Card variant="outlined">
+                          <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
+                            <Typography variant="caption" color="text.secondary">{m.label}</Typography>
+                            <Typography variant="h6">{m.value ?? 0}</Typography>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    ))}
+                  </Grid>
+                  <Divider sx={{ my: 2 }} />
+                </>
+              )}
+
+              {/* Fairness Analysis */}
+              {selectedReport.data?.fairness && (
+                <>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>Fairness Analysis</Typography>
+
+                  {Object.entries(selectedReport.data.fairness as Record<string, any[]>).map(([key, groups]) => (
+                    <Box key={key} sx={{ mb: 2 }}>
+                      <Typography variant="subtitle2" sx={{ mb: 1, textTransform: 'capitalize' }}>
+                        {key.replace('by_', 'By ')}
+                      </Typography>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Group</TableCell>
+                            <TableCell align="right">N</TableCell>
+                            <TableCell align="right">Flagged Rate</TableCell>
+                            <TableCell align="right">Avg Risk</TableCell>
+                            <TableCell align="right">Auto Rate</TableCell>
+                            <TableCell align="right">Safety Flag Rate</TableCell>
+                            <TableCell align="right">True At-Risk Rate</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {(groups || []).map((g: any) => (
+                            <TableRow key={g.group}>
+                              <TableCell sx={{ fontWeight: 600 }}>{g.group}</TableCell>
+                              <TableCell align="right">{g.n}</TableCell>
+                              <TableCell align="right">{(g.flagged_rate * 100).toFixed(1)}%</TableCell>
+                              <TableCell align="right">{(g.avg_risk * 100).toFixed(1)}%</TableCell>
+                              <TableCell align="right">{(g.auto_rate * 100).toFixed(1)}%</TableCell>
+                              <TableCell align="right">{(g.safety_flag_rate * 100).toFixed(1)}%</TableCell>
+                              <TableCell align="right">{(g.true_at_risk_rate * 100).toFixed(1)}%</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </Box>
+                  ))}
+                </>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setSelectedReport(null)}>Close</Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
     </Box>
   );
 }
