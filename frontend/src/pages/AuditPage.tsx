@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Typography, Card, CircularProgress, TextField, MenuItem,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  TablePagination, Chip,
+  TablePagination, Chip, Dialog, DialogTitle, DialogContent,
+  DialogActions, Button, IconButton, Divider, Grid,
 } from '@mui/material';
+import { Close as CloseIcon } from '@mui/icons-material';
 import { getAuditLogs } from '../services/api';
 import { formatDate } from '../utils/helpers';
 import type { AuditLog } from '../types';
@@ -15,6 +17,7 @@ export default function AuditPage() {
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState('');
+  const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -67,7 +70,7 @@ export default function AuditPage() {
               </TableHead>
               <TableBody>
                 {logs.map((log) => (
-                  <TableRow key={log.id} hover>
+                  <TableRow key={log.id} hover sx={{ cursor: 'pointer' }} onClick={() => setSelectedLog(log)}>
                     <TableCell sx={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{formatDate(log.created_at)}</TableCell>
                     <TableCell><Chip label={log.action_type} size="small" color={typeColors[log.action_type] || 'default'} /></TableCell>
                     <TableCell>{log.actor}</TableCell>
@@ -90,6 +93,63 @@ export default function AuditPage() {
           onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value)); setPage(0); }}
         />
       </Card>
+
+      {/* Audit Log Detail Dialog */}
+      <Dialog open={!!selectedLog} onClose={() => setSelectedLog(null)} maxWidth="sm" fullWidth>
+        {selectedLog && (
+          <>
+            <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box>
+                <Typography variant="h6">Audit Log Entry</Typography>
+                <Chip label={selectedLog.action_type} size="small" color={typeColors[selectedLog.action_type] || 'default'} sx={{ mt: 0.5 }} />
+              </Box>
+              <IconButton onClick={() => setSelectedLog(null)} size="small"><CloseIcon /></IconButton>
+            </DialogTitle>
+            <DialogContent dividers>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Timestamp</Typography>
+                  <Typography variant="body2">{formatDate(selectedLog.created_at)}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Actor</Typography>
+                  <Typography variant="body2">{selectedLog.actor || 'N/A'}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Target Type</Typography>
+                  <Typography variant="body2">{selectedLog.target_type || 'N/A'}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Target ID</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                    {selectedLog.target_id || 'N/A'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="caption" color="text.secondary">Log ID</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                    {selectedLog.id}
+                  </Typography>
+                </Grid>
+              </Grid>
+              <Divider sx={{ my: 1 }} />
+              <Typography variant="subtitle2" sx={{ mt: 1, mb: 1 }}>Details</Typography>
+              <Box sx={{
+                bgcolor: 'grey.50', borderRadius: 1, p: 2, fontFamily: 'monospace',
+                fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                border: '1px solid', borderColor: 'grey.200', maxHeight: 400, overflow: 'auto',
+              }}>
+                {selectedLog.details
+                  ? JSON.stringify(selectedLog.details, null, 2)
+                  : 'No details available'}
+              </Box>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setSelectedLog(null)}>Close</Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
     </Box>
   );
 }
