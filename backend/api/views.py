@@ -157,13 +157,29 @@ class WorkflowRunViewSet(viewsets.ReadOnlyModelViewSet):
     def trigger(self, request):
         serializer = WorkflowTriggerSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
+        requested_policy_id = serializer.validated_data.get('policy_id')
+        policy_config_id = str(requested_policy_id) if requested_policy_id else None
+
+        # Resolve the actual policy that will be used
+        if requested_policy_id:
+            resolved_policy_id = str(requested_policy_id)
+            resolved_policy_name = str(requested_policy_id)
+        else:
+            active_policy = PolicyConfiguration.objects.filter(is_active=True).first()
+            if active_policy:
+                resolved_policy_id = str(active_policy.id)
+                resolved_policy_name = active_policy.name
+            else:
+                resolved_policy_id = 'default (will be created)'
+                resolved_policy_name = 'Default Policy'
+
         from agents.tasks import run_screening_workflow_task
         task = run_screening_workflow_task.delay(
-            policy_config_id=str(serializer.validated_data.get('policy_id', '')) or None,
+            policy_config_id=policy_config_id,
             patient_limit=serializer.validated_data.get('patient_limit'),
         )
-        
+
         AuditLog.objects.create(
             action_type='AGENT_RUN',
             actor='api',
@@ -171,7 +187,8 @@ class WorkflowRunViewSet(viewsets.ReadOnlyModelViewSet):
             target_id=task.id,
             details={
                 'task_id': task.id,
-                'policy_id': str(serializer.validated_data.get('policy_id', '')),
+                'policy_id': resolved_policy_id,
+                'policy_name': resolved_policy_name,
                 'patient_limit': serializer.validated_data.get('patient_limit'),
             }
         )
