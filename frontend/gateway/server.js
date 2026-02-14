@@ -15,7 +15,7 @@ const A2A_URL = process.env.A2A_URL || 'http://a2a_gateway:9100';
 // Middleware
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({
-  origin: ['http://172.168.1.95:3055', 'http://localhost:3055'],
+  origin: ['http://108.48.39.238:3055', 'http://localhost:3055'],
   credentials: true,
 }));
 app.use(compression());

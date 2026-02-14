@@ -536,7 +536,7 @@ Built with **Recharts**:
    ```
 
 5. **Access the application**:
-   - **Web UI**: http://localhost:3055 (or http://172.168.1.95:3055)
+   - **Web UI**: http://localhost:3055 (or http://108.48.39.238:3055)
    - **REST API**: http://localhost:8055/api/
    - **MCP Server**: http://localhost:9055/mcp/
    - **A2A Gateway**: http://localhost:9155/a2a/
@@ -572,7 +572,7 @@ docker compose up --build -d
 | `DEBUG` | `0` | Django debug mode (set to 1 for development) |
 | `OPENAI_API_KEY` | (empty) | OpenAI API key for LLM-powered note summarization |
 | `OPENAI_BASE_URL` | (empty) | Custom OpenAI-compatible endpoint URL |
-| `SITE_URL` | `http://172.168.1.95:3055` | Public-facing site URL |
+| `SITE_URL` | `http://108.48.39.238:3055` | Public-facing site URL |
 
 ### Policy Defaults
 
