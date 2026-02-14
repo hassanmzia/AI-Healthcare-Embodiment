@@ -223,9 +223,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - REACT_APP_API_URL=http://108.48.39.238:4055
-        - REACT_APP_WS_URL=ws://108.48.39.238:8055
-        - REACT_APP_MCP_URL=http://108.48.39.238:9055
+        - REACT_APP_API_URL=
+        - REACT_APP_WS_URL=
+        - REACT_APP_MCP_URL=
     container_name: ms_risk_frontend
     ports:
       - "3055:80"

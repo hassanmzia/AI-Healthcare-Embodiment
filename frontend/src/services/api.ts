@@ -6,7 +6,7 @@ import type {
   MCPTool, A2AAgent, PaginatedResponse,
 } from '../types';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://108.48.39.238:4055';
+const API_BASE = process.env.REACT_APP_API_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE,
