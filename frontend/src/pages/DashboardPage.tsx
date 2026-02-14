@@ -28,11 +28,14 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { dashboard, setDashboard, dashboardLoading, setDashboardLoading } = useAppStore();
   const [triggerLoading, setTriggerLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setDashboardLoading(true);
+    setError(null);
     getDashboard()
       .then((r) => setDashboard(r.data))
+      .catch((err) => setError(err.message || 'Failed to load dashboard data'))
       .finally(() => setDashboardLoading(false));
   }, [setDashboard, setDashboardLoading]);
 
@@ -41,7 +44,7 @@ export default function DashboardPage() {
     try {
       await triggerWorkflow();
       setTimeout(() => {
-        getDashboard().then((r) => setDashboard(r.data));
+        getDashboard().then((r) => setDashboard(r.data)).catch(() => {});
         setTriggerLoading(false);
       }, 2000);
     } catch {
@@ -49,10 +52,20 @@ export default function DashboardPage() {
     }
   };
 
-  if (dashboardLoading || !dashboard) {
+  if (dashboardLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 10 }}>
         <CircularProgress size={60} />
+      </Box>
+    );
+  }
+
+  if (error || !dashboard) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 10 }}>
+        <Alert severity="error" sx={{ maxWidth: 600 }}>
+          {error || 'Unable to load dashboard. Please check that all services are running and refresh the page.'}
+        </Alert>
       </Box>
     );
   }
