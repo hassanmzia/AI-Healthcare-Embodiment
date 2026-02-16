@@ -229,7 +229,6 @@ services:
     container_name: ms_risk_frontend
     ports:
       - "3055:443"
-      - "80:80"
     volumes:
       - ./ssl:/etc/nginx/ssl:ro
     depends_on:
