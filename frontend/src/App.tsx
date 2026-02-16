@@ -1,9 +1,12 @@
 import React, { useMemo } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { SnackbarProvider } from 'notistack';
 import { useAppStore } from './store';
 import Layout from './components/Layout';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import ProfilePage from './pages/ProfilePage';
 import DashboardPage from './pages/DashboardPage';
 import PatientsPage from './pages/PatientsPage';
 import PatientDetailPage from './pages/PatientDetailPage';
@@ -18,8 +21,15 @@ import AgentsPage from './pages/AgentsPage';
 import AuditPage from './pages/AuditPage';
 import NotificationsPage from './pages/NotificationsPage';
 
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
 function App() {
   const darkMode = useAppStore((s) => s.darkMode);
+  const isAuthenticated = useAppStore((s) => s.isAuthenticated);
 
   const theme = useMemo(
     () =>
@@ -62,23 +72,32 @@ function App() {
       <CssBaseline />
       <SnackbarProvider maxSnack={3} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
         <Router>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/patients" element={<PatientsPage />} />
-              <Route path="/patients/:id" element={<PatientDetailPage />} />
-              <Route path="/assessments" element={<AssessmentsPage />} />
-              <Route path="/workflows" element={<WorkflowsPage />} />
-              <Route path="/workflows/:id" element={<WorkflowDetailPage />} />
-              <Route path="/fairness" element={<FairnessPage />} />
-              <Route path="/what-if" element={<WhatIfPage />} />
-              <Route path="/policies" element={<PoliciesPage />} />
-              <Route path="/governance" element={<GovernancePage />} />
-              <Route path="/agents" element={<AgentsPage />} />
-              <Route path="/audit" element={<AuditPage />} />
-              <Route path="/notifications" element={<NotificationsPage />} />
-            </Routes>
-          </Layout>
+          <Routes>
+            <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />} />
+            <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterPage />} />
+            <Route path="/*" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Routes>
+                    <Route path="/" element={<DashboardPage />} />
+                    <Route path="/patients" element={<PatientsPage />} />
+                    <Route path="/patients/:id" element={<PatientDetailPage />} />
+                    <Route path="/assessments" element={<AssessmentsPage />} />
+                    <Route path="/workflows" element={<WorkflowsPage />} />
+                    <Route path="/workflows/:id" element={<WorkflowDetailPage />} />
+                    <Route path="/fairness" element={<FairnessPage />} />
+                    <Route path="/what-if" element={<WhatIfPage />} />
+                    <Route path="/policies" element={<PoliciesPage />} />
+                    <Route path="/governance" element={<GovernancePage />} />
+                    <Route path="/agents" element={<AgentsPage />} />
+                    <Route path="/audit" element={<AuditPage />} />
+                    <Route path="/notifications" element={<NotificationsPage />} />
+                    <Route path="/profile" element={<ProfilePage />} />
+                  </Routes>
+                </Layout>
+              </ProtectedRoute>
+            } />
+          </Routes>
         </Router>
       </SnackbarProvider>
     </ThemeProvider>

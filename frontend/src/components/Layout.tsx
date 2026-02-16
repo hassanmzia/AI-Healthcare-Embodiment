@@ -1,9 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Drawer, AppBar, Toolbar, Typography, List, ListItem,
   ListItemButton, ListItemIcon, ListItemText, IconButton, Badge,
   Divider, Chip, Tooltip, Avatar, useTheme, useMediaQuery,
+  Menu, MenuItem,
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
@@ -21,9 +22,11 @@ import {
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
   LocalHospital as HospitalIcon,
+  Person as PersonIcon,
+  Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { useAppStore } from '../store';
-import { getDashboard, getUnreadCount } from '../services/api';
+import { getDashboard, getUnreadCount, logout } from '../services/api';
 
 const DRAWER_WIDTH = 260;
 
@@ -41,6 +44,8 @@ const menuItems = [
   { text: 'AI Agents', icon: <AgentsIcon />, path: '/agents' },
   { text: 'Audit Trail', icon: <AuditIcon />, path: '/audit' },
   { text: 'Notifications', icon: <NotificationsIcon />, path: '/notifications' },
+  { divider: true },
+  { text: 'Profile', icon: <PersonIcon />, path: '/profile' },
 ];
 
 interface LayoutProps {
@@ -52,7 +57,28 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const { sidebarOpen, toggleSidebar, setSidebarOpen, darkMode, toggleDarkMode, unreadCount, setUnreadCount, setDashboard } = useAppStore();
+  const { sidebarOpen, toggleSidebar, setSidebarOpen, darkMode, toggleDarkMode, unreadCount, setUnreadCount, setDashboard, user, clearAuth } = useAppStore();
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+
+  const userInitials = user
+    ? (user.first_name && user.last_name
+        ? `${user.first_name[0]}${user.last_name[0]}`
+        : user.username.substring(0, 2)
+      ).toUpperCase()
+    : '?';
+
+  const displayName = user
+    ? (user.first_name && user.last_name
+        ? `${user.first_name} ${user.last_name}`
+        : user.username)
+    : '';
+
+  const handleLogout = async () => {
+    setAnchorEl(null);
+    try { await logout(); } catch {}
+    clearAuth();
+    navigate('/login');
+  };
 
   useEffect(() => {
     getDashboard().then((r) => setDashboard(r.data)).catch(() => {});
@@ -106,11 +132,33 @@ export default function Layout({ children }: LayoutProps) {
               </Badge>
             </IconButton>
           </Tooltip>
-          <Tooltip title="Clinician">
-            <Avatar sx={{ ml: 1, bgcolor: 'rgba(255,255,255,0.2)', width: { xs: 30, sm: 36 }, height: { xs: 30, sm: 36 }, fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
-              Dr
-            </Avatar>
+          <Tooltip title={displayName || 'Account'}>
+            <IconButton onClick={(e) => setAnchorEl(e.currentTarget)} sx={{ ml: 0.5, p: 0 }}>
+              <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', width: { xs: 30, sm: 36 }, height: { xs: 30, sm: 36 }, fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
+                {userInitials}
+              </Avatar>
+            </IconButton>
           </Tooltip>
+          <Menu
+            anchorEl={anchorEl}
+            open={Boolean(anchorEl)}
+            onClose={() => setAnchorEl(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          >
+            <MenuItem disabled sx={{ opacity: '1 !important' }}>
+              <Typography variant="body2" fontWeight={600}>{displayName}</Typography>
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={() => { setAnchorEl(null); handleNavigation('/profile'); }}>
+              <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
+              Profile
+            </MenuItem>
+            <MenuItem onClick={handleLogout}>
+              <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon>
+              Logout
+            </MenuItem>
+          </Menu>
         </Toolbar>
       </AppBar>
 

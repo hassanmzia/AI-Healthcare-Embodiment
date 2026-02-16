@@ -1,9 +1,12 @@
 """REST API views for the MS Risk Lab application."""
 import logging
+from django.contrib.auth import authenticate
 from django.utils import timezone
 from django.db.models import Avg, Count, Q
 from rest_framework import viewsets, status, filters
-from rest_framework.decorators import api_view, action
+from rest_framework.authtoken.models import Token
+from rest_framework.decorators import api_view, action, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
@@ -17,6 +20,7 @@ from .serializers import (
     GovernanceRuleSerializer, ComplianceReportSerializer,
     AuditLogSerializer, NotificationSerializer,
     WorkflowTriggerSerializer, WhatIfSerializer, ReviewSerializer,
+    LoginSerializer, RegisterSerializer, UserSerializer, ChangePasswordSerializer,
 )
 from analytics.services import (
     compute_workflow_metrics, subgroup_analysis, risk_distribution,
@@ -28,8 +32,74 @@ logger = logging.getLogger(__name__)
 
 
 @api_view(['GET'])
+@permission_classes([AllowAny])
 def health_check(request):
     return Response({'status': 'healthy', 'service': 'ms-risk-lab-api'})
+
+
+# ─── Authentication Views ────────────────────────────────────────────────────
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login_view(request):
+    serializer = LoginSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    user = authenticate(
+        username=serializer.validated_data['username'],
+        password=serializer.validated_data['password'],
+    )
+    if not user:
+        return Response({'error': 'Invalid username or password.'}, status=status.HTTP_401_UNAUTHORIZED)
+    if not user.is_active:
+        return Response({'error': 'Account is disabled.'}, status=status.HTTP_403_FORBIDDEN)
+    token, _ = Token.objects.get_or_create(user=user)
+    return Response({
+        'token': token.key,
+        'user': UserSerializer(user).data,
+    })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_view(request):
+    serializer = RegisterSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    user = serializer.save()
+    token = Token.objects.create(user=user)
+    return Response({
+        'token': token.key,
+        'user': UserSerializer(user).data,
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+def logout_view(request):
+    request.user.auth_token.delete()
+    return Response({'status': 'logged out'})
+
+
+@api_view(['GET', 'PATCH'])
+def profile_view(request):
+    if request.method == 'GET':
+        return Response(UserSerializer(request.user).data)
+    serializer = UserSerializer(request.user, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+def change_password_view(request):
+    serializer = ChangePasswordSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    if not request.user.check_password(serializer.validated_data['old_password']):
+        return Response({'old_password': 'Current password is incorrect.'}, status=status.HTTP_400_BAD_REQUEST)
+    request.user.set_password(serializer.validated_data['new_password'])
+    request.user.save()
+    # Rotate token after password change
+    request.user.auth_token.delete()
+    new_token = Token.objects.create(user=request.user)
+    return Response({'status': 'password changed', 'token': new_token.key})
 
 
 class PatientViewSet(viewsets.ModelViewSet):

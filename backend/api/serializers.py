@@ -1,8 +1,54 @@
 """REST API serializers."""
+from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from patients.models import Patient, RiskAssessment, PolicyConfiguration, WorkflowRun
 from governance.models import GovernanceRule, ComplianceReport
 from core.models import AuditLog, Notification
+
+
+class LoginSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+
+
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, validators=[validate_password])
+    password_confirm = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = ['username', 'email', 'password', 'password_confirm', 'first_name', 'last_name']
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs.pop('password_confirm'):
+            raise serializers.ValidationError({'password_confirm': 'Passwords do not match.'})
+        if User.objects.filter(username=attrs['username']).exists():
+            raise serializers.ValidationError({'username': 'Username already taken.'})
+        if attrs.get('email') and User.objects.filter(email=attrs['email']).exists():
+            raise serializers.ValidationError({'email': 'Email already registered.'})
+        return attrs
+
+    def create(self, validated_data):
+        return User.objects.create_user(**validated_data)
+
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_staff']
+        read_only_fields = ['id', 'username', 'date_joined', 'is_staff']
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, validators=[validate_password])
+    new_password_confirm = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['new_password_confirm']:
+            raise serializers.ValidationError({'new_password_confirm': 'Passwords do not match.'})
+        return attrs
 
 
 class PatientListSerializer(serializers.ModelSerializer):

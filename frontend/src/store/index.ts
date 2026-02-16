@@ -1,7 +1,13 @@
 import { create } from 'zustand';
-import type { DashboardData, WorkflowRun, Notification } from '../types';
+import type { DashboardData, WorkflowRun, Notification, User } from '../types';
 
 interface AppState {
+  // Auth
+  isAuthenticated: boolean;
+  user: User | null;
+  setAuth: (user: User, token: string) => void;
+  clearAuth: () => void;
+
   // Dashboard
   dashboard: DashboardData | null;
   dashboardLoading: boolean;
@@ -28,7 +34,23 @@ interface AppState {
   setSidebarOpen: (open: boolean) => void;
 }
 
+const storedUser = localStorage.getItem('auth_user');
+const storedToken = localStorage.getItem('auth_token');
+
 export const useAppStore = create<AppState>((set) => ({
+  isAuthenticated: !!storedToken,
+  user: storedUser ? JSON.parse(storedUser) : null,
+  setAuth: (user, token) => {
+    localStorage.setItem('auth_token', token);
+    localStorage.setItem('auth_user', JSON.stringify(user));
+    set({ isAuthenticated: true, user });
+  },
+  clearAuth: () => {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+    set({ isAuthenticated: false, user: null });
+  },
+
   dashboard: null,
   dashboardLoading: false,
   setDashboard: (data) => set({ dashboard: data }),

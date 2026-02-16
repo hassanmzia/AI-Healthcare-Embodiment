@@ -3,7 +3,7 @@ import type {
   Patient, RiskAssessment, PolicyConfiguration, WorkflowRun,
   DashboardData, SubgroupData, RiskDistribution, CalibrationPoint,
   WhatIfResult, Notification, AuditLog, GovernanceRule,
-  MCPTool, A2AAgent, PaginatedResponse,
+  MCPTool, A2AAgent, PaginatedResponse, AuthResponse, User,
 } from '../types';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
@@ -14,7 +14,57 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Patients
+// Attach auth token to every request
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token');
+  if (token) {
+    config.headers.Authorization = `Token ${token}`;
+  }
+  return config;
+});
+
+// Redirect to login on 401
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && !error.config.url?.includes('/api/auth/')) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+export const login = (username: string, password: string) =>
+  api.post<AuthResponse>('/api/auth/login/', { username, password });
+
+export const register = (data: {
+  username: string;
+  email: string;
+  password: string;
+  password_confirm: string;
+  first_name: string;
+  last_name: string;
+}) => api.post<AuthResponse>('/api/auth/register/', data);
+
+export const logout = () =>
+  api.post('/api/auth/logout/');
+
+export const getProfile = () =>
+  api.get<User>('/api/auth/profile/');
+
+export const updateProfile = (data: Partial<User>) =>
+  api.patch<User>('/api/auth/profile/', data);
+
+export const changePassword = (data: {
+  old_password: string;
+  new_password: string;
+  new_password_confirm: string;
+}) => api.post<{ status: string; token: string }>('/api/auth/change-password/', data);
+
+// ─── Patients ────────────────────────────────────────────────────────────────
 export const getPatients = (params?: Record<string, any>) =>
   api.get<PaginatedResponse<Patient>>('/api/patients/', { params });
 
